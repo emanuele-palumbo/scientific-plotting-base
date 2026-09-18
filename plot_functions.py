@@ -900,3 +900,354 @@ def plot_heatmap_from_h5_dataframe(
     x_nbins=None,
     y_nbins=None,
     filtered_matrix=False,
+):
+    """
+    Generic heatmap plotter for HDF5 files containing a saved dataframe.
+
+    Expected HDF5 datasets:
+        - df_column_names
+        - df_matrix
+        - optionally df_filtered_matrix
+
+    If filtered_matrix=True, values are taken from df_filtered_matrix,
+    but the heatmap grid is reconstructed from the full df_matrix.
+    This avoids stretched bins when the filtered dataframe is sparse.
+    """
+
+    set_sqe_style()
+
+    file_path = Path(data_folder) / filename
+
+    with h5py.File(file_path, "r") as f:
+
+        columns = [
+            c.decode("utf-8") if isinstance(c, bytes) else str(c)
+            for c in f["df_column_names"][()]
+        ]
+
+        data_full = f["df_matrix"][()]
+
+        if filtered_matrix:
+            data = f["df_filtered_matrix"][()]
+        else:
+            data = data_full
+
+    df = pd.DataFrame(data.T, columns=columns)
+    df_full = pd.DataFrame(data_full.T, columns=columns)
+
+    # --------------------------------------------------
+    # Column checks
+    # --------------------------------------------------
+
+    for col in [x_col, y_col, z_col]:
+        if col not in df.columns:
+            raise ValueError(
+                f"Column '{col}' not found. "
+                f"Available columns are: {list(df.columns)}"
+            )
+
+    # --------------------------------------------------
+    # Unit conversion
+    # --------------------------------------------------
+
+    df_plot = df.copy()
+    df_full_plot = df_full.copy()
+
+    df_plot[x_col] = df_plot[x_col] * x_scale
+    df_plot[y_col] = df_plot[y_col] * y_scale
+
+    df_full_plot[x_col] = df_full_plot[x_col] * x_scale
+    df_full_plot[y_col] = df_full_plot[y_col] * y_scale
+
+    if y_to_dBm:
+        df_plot[y_col] = Ip_to_dBm(df_plot[y_col])
+        df_full_plot[y_col] = Ip_to_dBm(df_full_plot[y_col])
+
+    # Avoid floating-point duplicated grid labels
+    df_plot[x_col] = np.round(df_plot[x_col], 6)
+    df_plot[y_col] = np.round(df_plot[y_col], 6)
+
+    df_full_plot[x_col] = np.round(df_full_plot[x_col], 6)
+    df_full_plot[y_col] = np.round(df_full_plot[y_col], 6)
+
+    # --------------------------------------------------
+    # Pivot table
+    # --------------------------------------------------
+
+    pivot = df_plot.pivot_table(
+        index=y_col,
+        columns=x_col,
+        values=z_col,
+        aggfunc="mean",
+    )
+
+    pivot = pivot.sort_index().sort_index(axis=1)
+
+    # --------------------------------------------------
+    # Reconstruct full grid from df_matrix
+    # --------------------------------------------------
+
+    x_full = np.sort(df_full_plot[x_col].unique())
+    y_full = np.sort(df_full_plot[y_col].unique())
+
+    pivot = pivot.reindex(index=y_full, columns=x_full)
+
+    X = pivot.columns.values
+    Y = pivot.index.values
+    Z = pivot.values
+
+    # --------------------------------------------------
+    # Convert grid centers to grid edges
+    # --------------------------------------------------
+
+    def centers_to_edges(x):
+        x = np.asarray(x, dtype=float)
+
+        if len(x) == 1:
+            dx = 1.0
+            return np.array([x[0] - dx / 2, x[0] + dx / 2])
+
+        dx = np.diff(x)
+
+        edges = np.empty(len(x) + 1)
+        edges[1:-1] = x[:-1] + dx / 2
+        edges[0] = x[0] - dx[0] / 2
+        edges[-1] = x[-1] + dx[-1] / 2
+
+        return edges
+
+    X_edges = centers_to_edges(X)
+    Y_edges = centers_to_edges(Y)
+
+    # --------------------------------------------------
+    # Plot
+    # --------------------------------------------------
+
+    set_sqe_style(grid=False)
+
+    fig, ax = make_panel(fig_size)
+
+    cmap = sqe_cmap(cmap_name)
+    norm = linear_norm(Z, clim)
+
+    im = ax.pcolormesh(
+        X_edges,
+        Y_edges,
+        Z,
+        cmap=cmap,
+        norm=norm,
+        shading="flat",
+    )
+
+    if xlabel is None:
+        xlabel = x_col
+
+    if ylabel is None:
+        ylabel = y_col
+
+    if cbar_label is None:
+        cbar_label = z_col
+
+    style_axis(
+        ax,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        grid=False,
+    )
+
+    if x_nbins is not None:
+        tick_every_x = max(1, len(X) // x_nbins)
+        ax.set_xticks(X[::tick_every_x])
+    else:
+        ax.set_xticks(X)
+
+    if y_nbins is not None:
+        tick_every_y = max(1, len(Y) // y_nbins)
+        ax.set_yticks(Y[::tick_every_y])
+    else:
+        ax.set_yticks(Y)
+
+    cbar = fig.colorbar(im, ax=ax)
+
+    style_colorbar(
+        cbar,
+        label=cbar_label,
+    )
+
+    plt.tight_layout()
+
+    # --------------------------------------------------
+    # Save figure
+    # --------------------------------------------------
+
+    if save_name is None:
+        save_name = f"{z_col}_heatmap"
+
+    if save_name is not None:
+
+        output_folder = Path(output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+
+        save_figure(
+            fig,
+            output_folder / save_name,
+            formats=("pdf", "png"),
+            dpi=600,
+        )
+
+    plt.show()
+
+    return df, pivot
+
+def plot_2d_from_h5_dataframe(
+    data_folder="analysis_inputs/heatmap_df_nonlin",
+    filename="df_nonlinear_analysis.h5",
+    x_col="source_1_frequency",
+    y_col="performance",
+    x_scale=1,
+    y_scale=1,
+    x_to_GHz=False,
+    y_to_dBm=False,
+    xlabel=None,
+    ylabel=None,
+    label=None,
+    color=SQE_COLORS["indigo"],
+    save_name=None,
+    output_folder="analysis_outputs/2d_plots",
+    fig_size="single_large",
+    marker=".",
+    linestyle="-",
+    sort_by_x=True,
+    grid=False,
+    filtered_matrix=False,
+):
+    """
+    Generic 2D plotter for HDF5 files containing a saved dataframe.
+
+    Expected HDF5 datasets:
+        - df_column_names
+        - df_matrix
+
+    Parameters
+    ----------
+    x_col, y_col : str
+        Names of the dataframe columns used for x and y.
+
+    x_scale, y_scale : float
+        Multiplicative scale factors applied to x_col and y_col.
+
+    x_to_GHz : bool
+        If True, converts x_col from Hz to GHz.
+
+    y_to_dBm : bool
+        If True, converts y_col from pump current to dBm using Ip_to_dBm().
+
+    xlabel, ylabel : str or None
+        Axis labels. If None, column names are used.
+    """
+
+    set_sqe_style(grid=grid)
+
+    file_path = Path(data_folder) / filename
+
+    with h5py.File(file_path, "r") as f:
+
+        columns = [
+            c.decode("utf-8") if isinstance(c, bytes) else str(c)
+            for c in f["df_column_names"][()]
+        ]
+
+        if filtered_matrix:
+            data = f["df_filtered_matrix"][()]
+        else:
+            data = f["df_matrix"][()]
+
+    df = pd.DataFrame(data.T, columns=columns)
+
+    # --------------------------------------------------
+    # Column checks
+    # --------------------------------------------------
+
+    for col in [x_col, y_col]:
+        if col not in df.columns:
+            raise ValueError(
+                f"Column '{col}' not found. "
+                f"Available columns are: {list(df.columns)}"
+            )
+
+    # --------------------------------------------------
+    # Unit conversion
+    # --------------------------------------------------
+
+    df_plot = df.copy()
+
+    df_plot[x_col] = df_plot[x_col] * x_scale
+    df_plot[y_col] = df_plot[y_col] * y_scale
+
+    if x_to_GHz:
+        df_plot[x_col] = df_plot[x_col] / 1e9
+
+    if y_to_dBm:
+        df_plot[y_col] = Ip_to_dBm(df_plot[y_col])
+
+    if sort_by_x:
+        df_plot = df_plot.sort_values(by=x_col)
+
+    X = df_plot[x_col].values
+    Y = df_plot[y_col].values
+
+    # --------------------------------------------------
+    # Plot
+    # --------------------------------------------------
+
+    fig, ax = make_panel(fig_size)
+
+    ax.plot(
+        X,
+        Y,
+        marker=marker,
+        linestyle=linestyle,
+        label=label,
+        color=color,
+    )
+
+    if xlabel is None:
+        xlabel = x_col
+
+    if ylabel is None:
+        ylabel = y_col
+
+    style_axis(
+        ax,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        grid=grid,
+    )
+
+    if label is not None:
+        ax.legend(frameon=False)
+
+    plt.tight_layout()
+
+    # --------------------------------------------------
+    # Save figure
+    # --------------------------------------------------
+
+    if save_name is None:
+        save_name = f"{y_col}_vs_{x_col}"
+
+    if save_name is not None:
+
+        output_folder = Path(output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+
+        save_figure(
+            fig,
+            output_folder / save_name,
+            formats=("pdf", "png"),
+            dpi=600,
+        )
+
+    plt.show()
+
+    return df
