@@ -599,3 +599,304 @@ def plot_single_gain(
     )
 
     fig, ax = make_panel(fig_size)
+
+
+    ax.plot(
+        frequency_GHz,
+        gain_dB,
+        label=rf"$P_p={pump_power_dBm:.1f}$ dBm",
+    )
+
+    add_pump_lines(ax, fpump)
+
+    style_axis(
+        ax,
+        xlabel=LABEL_FREQ_GHZ,
+        ylabel=LABEL_GAIN_DB,
+    )
+
+    style_legend(
+        ax,
+        frameon=False,
+    )
+
+    # --------------------------------------------------
+    # inset
+    # --------------------------------------------------
+
+    if inset_xlim is not None:
+
+        axins = inset_axes(
+            ax,
+            width="38%",
+            height="32%",
+            loc=inset_loc,
+            bbox_to_anchor=(0.0, 0.03, 1.0, 1.0),
+            bbox_transform=ax.transAxes,
+            borderpad=1.2,
+        )
+
+        axins.plot(
+            frequency_GHz,
+            gain_dB,
+        )
+
+        axins.set_xlim(*inset_xlim)
+
+        if inset_ylim is not None:
+
+            axins.set_ylim(
+                *inset_ylim
+            )
+
+        else:
+
+            mask = (
+                (frequency_GHz >= inset_xlim[0])
+                &
+                (frequency_GHz <= inset_xlim[1])
+            )
+
+            ymin = np.nanmin(
+                gain_dB[mask]
+            )
+
+            ymax = np.nanmax(
+                gain_dB[mask]
+            )
+
+            margin = 0.1 * (
+                ymax - ymin
+            )
+
+            axins.set_ylim(
+                ymin - margin,
+                ymax + margin,
+            )
+
+        axins.grid(True)
+
+        mark_inset(
+            ax,
+            axins,
+            loc1=1,
+            loc2=3,
+            fc="none",
+            ec="0.5",
+        )
+
+    # --------------------------------------------------
+
+    fig.tight_layout()
+
+    if output_folder is not None:
+
+        output_folder = Path(
+            output_folder
+        )
+
+        output_folder.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        if save_name is None:
+            save_name = (
+                Path(filename).stem
+            )
+
+        save_figure(
+            fig,
+            output_folder / save_name,
+        )
+
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    return fig, ax
+
+def plot_pump_freq_vs_power_vs_performance(
+    data_folder="analysis_inputs/heatmap_df_nonlin",
+    filename="df_nonlinear_analysis.h5",
+    metric_col="performance",
+    dBm=True,
+    clim=None,
+    cbar_label=None,
+    save_name=None,
+    output_folder="analysis_outputs/heatmap_perf",
+    fig_size="single_large",
+    cmap_name="sqe_gain",
+):
+
+    set_sqe_style()
+
+    file_path = Path(data_folder) / filename
+
+    with h5py.File(file_path, "r") as f:
+
+        columns = [
+            c.decode("utf-8") if isinstance(c, bytes) else str(c)
+            for c in f["df_nonlinear_column_names"][()]
+        ]
+
+        data = f["df_nonlinear_matrix"][()]
+
+    df = pd.DataFrame(data.T, columns=columns)
+
+    # --------------------------------------------------
+    # Column selection
+    # --------------------------------------------------
+
+    if metric_col not in df.columns:
+        raise ValueError(
+            f"metric_col='{metric_col}' not found. "
+            f"Available columns are: {list(df.columns)}"
+        )
+
+    amp_col = "source_1_amplitude"
+    freq_col = "source_1_frequency"
+
+    if amp_col not in df.columns:
+        amp_col = df.columns[3]
+
+    if freq_col not in df.columns:
+        freq_col = df.columns[4]
+
+    # --------------------------------------------------
+    # Unit conversion
+    # --------------------------------------------------
+
+    df_plot = df.copy()
+
+    if dBm:
+        df_plot[amp_col] = Ip_to_dBm(df_plot[amp_col])
+
+    df_plot[freq_col] /= 1e9
+
+    # --------------------------------------------------
+    # Pivot table
+    # --------------------------------------------------
+
+    pivot = df_plot.pivot_table(
+        index=amp_col,
+        columns=freq_col,
+        values=metric_col,
+        aggfunc="mean",
+    )
+
+    pivot = pivot.sort_index().sort_index(axis=1)
+
+    X = pivot.columns.values
+    Y = pivot.index.values
+    Z = pivot.values
+
+    # --------------------------------------------------
+    # Convert grid centers to grid edges
+    # --------------------------------------------------
+
+    def centers_to_edges(x):
+        x = np.asarray(x, dtype=float)
+
+        if len(x) == 1:
+            dx = 1.0
+            return np.array([x[0] - dx / 2, x[0] + dx / 2])
+
+        dx = np.diff(x)
+
+        edges = np.empty(len(x) + 1)
+        edges[1:-1] = x[:-1] + dx / 2
+        edges[0] = x[0] - dx[0] / 2
+        edges[-1] = x[-1] + dx[-1] / 2
+
+        return edges
+
+    X_edges = centers_to_edges(X)
+    Y_edges = centers_to_edges(Y)
+
+    # --------------------------------------------------
+    # Plot
+    # --------------------------------------------------
+
+    set_sqe_style(grid=False)
+
+    fig, ax = make_panel(fig_size)
+
+    cmap = sqe_cmap(cmap_name)
+    norm = linear_norm(Z, clim)
+
+    im = ax.pcolormesh(
+        X_edges,
+        Y_edges,
+        Z,
+        cmap=cmap,
+        norm=norm,
+        shading="flat",
+    )
+
+    style_axis(
+        ax,
+        xlabel=LABEL_FP_GHZ,
+        ylabel=LABEL_PUMP_POWER_DBM if dBm else "Pump Current / A",
+        grid=False,
+    )
+
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=7))
+
+    cbar = fig.colorbar(im, ax=ax)
+
+    if cbar_label is None:
+        cbar_label = metric_col
+
+    style_colorbar(
+        cbar,
+        label=cbar_label,
+    )
+
+    plt.tight_layout()
+
+    # --------------------------------------------------
+    # Save figure
+    # --------------------------------------------------
+
+    if save_name is None:
+        save_name = f"{metric_col}_heatmap"
+
+    if save_name is not None:
+
+        output_folder = Path(output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+
+        save_figure(
+            fig,
+            output_folder / save_name,
+            formats=("pdf", "png"),
+            dpi=600,
+        )
+
+    plt.show()
+
+    return df, pivot
+
+def plot_heatmap_from_h5_dataframe(
+    data_folder="",
+    filename="df_nonlinear_analysis.h5",
+    x_col="source_1_frequency",
+    y_col="source_1_amplitude",
+    z_col="performance",
+    x_scale=1,
+    y_scale=1,
+    y_to_dBm=False,
+    xlabel=None,
+    ylabel=None,
+    cbar_label=None,
+    cmap_name="sqe_gain",
+    clim=None,
+    save_name=None,
+    output_folder="analysis_outputs/heatmap_perf",
+    fig_size="single_large",
+    x_nbins=None,
+    y_nbins=None,
+    filtered_matrix=False,
