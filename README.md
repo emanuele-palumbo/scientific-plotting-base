@@ -38,3 +38,29 @@ Install with:
 ```bash
 pip install -r requirements.txt
 ```
+
+## Current and legacy colormaps
+
+Existing colormap names keep their current definitions. Original ramps are
+available alongside them with explicit names:
+
+| Current name | Current colors | Original version |
+| --- | --- | --- |
+| `sqe_gain`, `sqe_power` | indigo → citrine | `sqe_gain_legacy`, `sqe_power_legacy` |
+| `sqe_sequential` | indigo → verdigris | `sqe_sequential_legacy` |
+| `sqe_diverging` | indigo → white → citrine | `sqe_diverging_legacy` |
+
+The original gain/power/sequential ramp is **indigo → verdigris → citrine**,
+also named `sqe_indigo_verdigris_citrine`. The original diverging ramp is
+**citrine → white → indigo**, also named `sqe_citrine_white_indigo`.
+Other original aliases (`gold_white_blue`, `blue_white_red`,
+`red_white_blue`, `sqe_phase`, `sqe_discrete`, and `sqe_lines`) remain
+available with their original colors.
+
+Append `_r` to reverse any SQE ramp, including legacy names:
+
+```python
+gain_cmap = sqe_cmap("sqe_gain_legacy")
+reversed_gain_cmap = sqe_cmap("sqe_gain_legacy_r")
+reflection_cmap = sqe_cmap("YlOrBr_r")  # original Matplotlib reflection ramp
+```
