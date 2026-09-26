@@ -59,52 +59,100 @@ SQE_COLOR_CYCLE = [
 ]
 
 
-def sqe_cmap(name="gold_white_blue"):
-    """
-    Return SQE-inspired colormaps.
+def _linear_cmap(name, colors):
+    """Build a continuous SQE colormap from the official palette."""
+    return LinearSegmentedColormap.from_list(name, colors)
 
-    Available names
-    ---------------
+
+def _discrete_cmap(name, colors, n=5):
+    """Build an n-level discrete SQE colormap by sampling a continuous ramp."""
+    cmap = _linear_cmap(f"{name}_continuous", colors)
+    return ListedColormap(cmap(np.linspace(0.0, 1.0, n)), name=name)
+
+
+def sqe_cmap(name="sqe_citrine_indigo"):
+    """
+    Return colormaps defined by the SQE reference-palette slide.
+
+    Official continuous ramps
+    -------------------------
+    "sqe_citrine_indigo"         : citrine -> indigo
+    "sqe_red_verdigris"          : red -> verdigris
+    "sqe_indigo_white_citrine"   : indigo -> white -> citrine
+    "sqe_red_white_verdigris"    : red -> white -> verdigris
+    "sqe_red_white_indigo"       : red -> white -> indigo
+    "sqe_citrine_white_verdigris": citrine -> white -> verdigris
+    "sqe_citrine_verdigris"      : citrine -> verdigris
+    "sqe_citrine_red"            : citrine -> red
+    "sqe_indigo_red"             : indigo -> red
+    "sqe_indigo_verdigris"       : indigo -> verdigris
+
+    Official discrete ramps
+    -----------------------
+    "sqe_citrine_indigo_5"       : five levels, citrine -> indigo
+    "sqe_red_verdigris_5"        : five levels, red -> verdigris
+
+    Line/discrete palette
+    ---------------------
+    "sqe_discrete", "sqe_lines"  : indigo, citrine, red, verdigris, black
+
+    Backward-compatible aliases
+    ---------------------------
     "gold_white_blue" : citrine -> white -> indigo
     "blue_white_red"  : indigo -> white -> red
     "red_white_blue"  : red -> white -> indigo
-    "sqe_discrete"    : listed SQE color palette
-    "sqe_sequential"  : indigo -> verdigris -> citrine
-    "sqe_gain"        : indigo -> verdigris -> citrine
-    "sqe_diverging"   : citrine -> white -> indigo
+    "sqe_diverging"   : indigo -> white -> citrine
     "sqe_phase"       : red -> white -> indigo
-    "sqe_power"       : indigo -> verdigris -> citrine
-    "sqe_lines"       : listed SQE line colors
+    "sqe_sequential"  : indigo -> verdigris
+    "sqe_gain"        : indigo -> citrine
+    "sqe_power"       : indigo -> citrine
+
+    Append "_r" to any SQE name to reverse it.
     """
+    reverse = name.endswith("_r")
+    base_name = name[:-2] if reverse else name
 
-    if name in ("gold_white_blue", "sqe_diverging"):
-        return LinearSegmentedColormap.from_list(
-            "sqe_gold_white_blue",
-            [SQE_COLORS["citrine"], "#FFFFFF", SQE_COLORS["indigo"]]
+    C = SQE_COLORS
+    maps = {
+        # Exact continuous ramps shown on slide 2.
+        "sqe_citrine_indigo": [C["citrine"], C["indigo"]],
+        "sqe_red_verdigris": [C["red"], C["verdigris"]],
+        "sqe_indigo_white_citrine": [C["indigo"], "#FFFFFF", C["citrine"]],
+        "sqe_red_white_verdigris": [C["red"], "#FFFFFF", C["verdigris"]],
+        "sqe_red_white_indigo": [C["red"], "#FFFFFF", C["indigo"]],
+        "sqe_citrine_white_verdigris": [C["citrine"], "#FFFFFF", C["verdigris"]],
+        "sqe_citrine_verdigris": [C["citrine"], C["verdigris"]],
+        "sqe_citrine_red": [C["citrine"], C["red"]],
+        "sqe_indigo_red": [C["indigo"], C["red"]],
+        "sqe_indigo_verdigris": [C["indigo"], C["verdigris"]],
+
+        # Backward-compatible names used in older notebooks.
+        "gold_white_blue": [C["citrine"], "#FFFFFF", C["indigo"]],
+        "blue_white_red": [C["indigo"], "#FFFFFF", C["red"]],
+        "red_white_blue": [C["red"], "#FFFFFF", C["indigo"]],
+        "sqe_diverging": [C["indigo"], "#FFFFFF", C["citrine"]],
+        "sqe_phase": [C["red"], "#FFFFFF", C["indigo"]],
+        "sqe_sequential": [C["indigo"], C["verdigris"]],
+        "sqe_gain": [C["indigo"], C["citrine"]],
+        "sqe_power": [C["indigo"], C["citrine"]],
+    }
+
+    if base_name in ("sqe_discrete", "sqe_lines"):
+        cmap = ListedColormap(SQE_COLOR_CYCLE, name="sqe_discrete")
+    elif base_name == "sqe_citrine_indigo_5":
+        cmap = _discrete_cmap(
+            "sqe_citrine_indigo_5", [C["citrine"], C["indigo"]], n=5
         )
-
-    if name in ("blue_white_red",):
-        return LinearSegmentedColormap.from_list(
-            "sqe_blue_white_red",
-            [SQE_COLORS["indigo"], "#FFFFFF", SQE_COLORS["red"]]
+    elif base_name == "sqe_red_verdigris_5":
+        cmap = _discrete_cmap(
+            "sqe_red_verdigris_5", [C["red"], C["verdigris"]], n=5
         )
+    elif base_name in maps:
+        cmap = _linear_cmap(base_name, maps[base_name])
+    else:
+        return plt.get_cmap(name)
 
-    if name in ("red_white_blue", "sqe_phase"):
-        return LinearSegmentedColormap.from_list(
-            "sqe_red_white_blue",
-            [SQE_COLORS["red"], "#FFFFFF", SQE_COLORS["indigo"]]
-        )
-
-    if name in ("sqe_sequential", "sqe_gain", "sqe_power"):
-        return LinearSegmentedColormap.from_list(
-            "sqe_sequential",
-            [SQE_COLORS["indigo"], SQE_COLORS["verdigris"], SQE_COLORS["citrine"]]
-        )
-
-    if name in ("sqe_discrete", "sqe_lines"):
-        return ListedColormap(SQE_COLOR_CYCLE, name="sqe_discrete")
-
-    return plt.get_cmap(name)
+    return cmap.reversed(name=f"{base_name}_r") if reverse else cmap
 
 
 def symmetric_norm(data, clim=None, center=0.0):
