@@ -107,7 +107,17 @@ def sqe_cmap(name="sqe_citrine_indigo"):
     "sqe_gain"        : indigo -> citrine
     "sqe_power"       : indigo -> citrine
 
-    Append "_r" to any SQE name to reverse it.
+    Legacy ramps (before the reference-palette update)
+    -------------------------------------------------
+    "sqe_indigo_verdigris_citrine": indigo -> verdigris -> citrine
+    "sqe_gain_legacy", "sqe_power_legacy", "sqe_sequential_legacy":
+        aliases for the original three-color sequential ramp
+    "sqe_citrine_white_indigo", "sqe_diverging_legacy":
+        citrine -> white -> indigo (original diverging direction)
+
+    Existing names retain their current colors. Matplotlib names such as
+    "YlOrBr_r" remain supported for the original reflection plots.
+    Append "_r" to any SQE name, including legacy names, to reverse it.
     """
     reverse = name.endswith("_r")
     base_name = name[:-2] if reverse else name
@@ -126,7 +136,15 @@ def sqe_cmap(name="sqe_citrine_indigo"):
         "sqe_indigo_red": [C["indigo"], C["red"]],
         "sqe_indigo_verdigris": [C["indigo"], C["verdigris"]],
 
-        # Backward-compatible names used in older notebooks.
+        # Original ramps, explicitly named to preserve current aliases.
+        "sqe_indigo_verdigris_citrine": [C["indigo"], C["verdigris"], C["citrine"]],
+        "sqe_gain_legacy": [C["indigo"], C["verdigris"], C["citrine"]],
+        "sqe_power_legacy": [C["indigo"], C["verdigris"], C["citrine"]],
+        "sqe_sequential_legacy": [C["indigo"], C["verdigris"], C["citrine"]],
+        "sqe_citrine_white_indigo": [C["citrine"], "#FFFFFF", C["indigo"]],
+        "sqe_diverging_legacy": [C["citrine"], "#FFFFFF", C["indigo"]],
+
+        # Existing aliases retain their current definitions.
         "gold_white_blue": [C["citrine"], "#FFFFFF", C["indigo"]],
         "blue_white_red": [C["indigo"], "#FFFFFF", C["red"]],
         "red_white_blue": [C["red"], "#FFFFFF", C["indigo"]],
